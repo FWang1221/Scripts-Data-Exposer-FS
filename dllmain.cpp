@@ -9,7 +9,6 @@
 #include "include/Logger.h"
 #include "game/ProcessData.h"
 #include "game/AOBScan.h"
-#include "game/OtherHooks.h"
 
 
 #if _WIN64
@@ -33,8 +32,10 @@ static inline void printAddresses()
     Logger::debug("Addresses:");
     for (auto const& [name, address] : registeredAddresses) 
     {
-        Logger::debug("%s: %p", name, address);
+        Logger::debug("%s: %p", name.c_str(), address);
     }
+    Logger::debug("%s: %p", "newEnvFunc", newEnvFunc);
+    Logger::debug("%s: %p", "newActFunc", newActFunc);
     Logger::debug("---");
 }
 #else
@@ -65,8 +66,6 @@ void initHooks()
 {
     createHook("hksSetCGlobals", replacedHksSetCGlobals, &hksSetCGlobalsHookFunc, (void**)&hksSetCGlobals);
 
-    otherHooks();
-
     MH_EnableHook(MH_ALL_HOOKS);
 }
 
@@ -77,7 +76,7 @@ void onAttach()
         AllocConsole();
         freopen_s((FILE**)stdout, "CONOUT$", "w", stdout);
         freopen_s((FILE**)stdin, "CONIN$", "r", stdin);
-        Logger::debug("Created Scripts-Data-Exposer-FS Console");
+        Logger::log("Created Scripts-Data-Exposer-FS Console");
 
     }
 
@@ -96,6 +95,12 @@ void onAttach()
 
     initHooks();
 
+    initialize_lua_state();
+
+    std::string path = "scriptExposerAssets/Start.lua";
+
+    run_lua_file(path.c_str());
+
     Logger::debug("Finished onAttach");
 }
 
@@ -103,6 +108,7 @@ void onDetach()
 {
     MH_DisableHook(MH_ALL_HOOKS);
     MH_Uninitialize();
+    cleanup_lua_state();
 }
 
 BOOL APIENTRY DllMain( HMODULE hModule,

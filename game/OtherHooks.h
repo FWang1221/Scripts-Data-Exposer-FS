@@ -8,12 +8,13 @@
 #include "../include/Logger.h"
 #include "ProcessData.h"
 #include "AOBScan.h"
+#include <atomic>
 
 static uintptr_t addressToSet = 0x143D7A359;
 typedef __int64(__fastcall* __timeStepSetter)(__int64 trash, __int64 FD4Time);
 static __timeStepSetter timeStepSetter = (__timeStepSetter)(0x1411DF900);
 static __timeStepSetter timeStepSetterOriginal = NULL;
-extern float timeStepper = 0.0166f;
+extern std::atomic<float> timeStepper = 0.0166f;
 __int64 setTimeStep(__int64 trash, __int64 FD4Time) {
 
   if (true)

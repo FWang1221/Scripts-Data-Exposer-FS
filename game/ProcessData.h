@@ -31,9 +31,65 @@ intptr_t getProcessBase()
     return (intptr_t)PROCESS_INFO.mInfo.lpBaseOfDll;
 }
 
+
+//bases
+//void** VirtualMemoryFlag;
+void** SoloParamRepository;
+void** WorldChrMan;
+
+//misc
+void** WorldChrManDbg;
+void** WorldAiManager;
+void** GameMan;
+void** FieldArea;
+void** GameData;
+void** EventMan;
+void** EventFlagMan;
+void** LockTgtMan;
+void** DamageManagement;
+void** MapItemMan;
+void** Dlc;
+void** DebugFlags;
+void** DebugMenu;
+void** RenderFlags;
+void** TargetingDrawFlags;
+void** RendMan;
+
 //functions
 
 static const char* CALLER_NAME = "ExposerEventCaller";
+
+//misc
+//bool (*getEventFlagPtr)(void* virtualMemoryFlag, unsigned int* flagId, EventFlagCaller* caller);
+/*
+bool getEventFlag(void* virtualMemoryFlag, unsigned int flagId) 
+{
+    EventFlagCaller caller;
+    caller.caller = (void*)CALLER_NAME;
+    return getEventFlagPtr(virtualMemoryFlag, &flagId, &caller);
+}*/
+
+//void (*setEventFlagPtr)(void* virtualMemoryFlag, unsigned int* flagId, bool val, EventFlagCaller* caller, bool unk_5);
+/*
+void setEventFlag(void* virtualMemoryFlag, unsigned int flagId, int val) 
+{
+    EventFlagCaller caller;
+    caller.caller = (void*)CALLER_NAME;
+    setEventFlagPtr(virtualMemoryFlag, &flagId, val != 0, &caller, true);
+}*/
+
+//void* (*getParamResCap)(void* soloParamRepository, int paramIndex, int unk);
+
+/*inline void* getParamData(int paramIndex)
+{
+    intptr_t param = (intptr_t)getParamResCap(*SoloParamRepository, paramIndex, 0);
+    if (param == NULL) return NULL;
+    return (void*)(*(intptr_t*)((*(intptr_t*)(param + 0x80)) + 0x80));
+}*/
+
+//void* (*getChrInsFromHandle)(void* worldChrMan, uint64_t* handlePtr);
+
+//char (*replaceItem)(void* equipGameData, int itemToReplace, int newItem, char unk3);
 
 
 //HKS
@@ -80,10 +136,6 @@ float (*hks_luaL_checknumber)(HksState* hksState, int idx);
 //+ 0x1497180
 const char* (*hks_luaL_checklstring)(HksState* hksState, int idx, size_t* lenOut);
 
-// sekiro time shit
-float* patternTimescale;
-float* playerPatternTimescale;
-
 /*
 * Push number onto the lua stack. (E.g use to return a number in a CFunction).
 */
@@ -94,7 +146,7 @@ void (*hks_lua_pushlstring)(HksState* hksState, const char* str, size_t len);
 /*
 * Gets hkbCharacter (ptr) owner of the HKS script. This probably returns a pointer to a whole struct whose first element is hkbChr. hkbCharacter->28 is ChrIns
 */
-void** (*getHkbChrFromHks)(HksState* hksState);
+//void** (*getHkbChrFromHks)(HksState* hksState);
 
 /*
 * Pushes a few globals onto the state, including env and act
@@ -113,7 +165,14 @@ bool hksHasParamNumber(HksState* hksState, int paramIndex)
     bool out = false;
     return *hksHasParamNumberOut(&out, hksState, paramIndex);
 }
+/*
+void* getHksChrInsOwner(HksState* hksState) 
+{
+    intptr_t hkbCharacter = (intptr_t)*getHkbChrFromHks(hksState);
+    if (hkbCharacter == NULL) return NULL;
 
+    return *(void **)(hkbCharacter + 0x28);
+}*/
 
 /*
 * Gets the function to be executed's nth param as a string.
@@ -275,3 +334,55 @@ inline void hksPushNil(HksState* hksState)
     *PointerChain::make<intptr_t>(hksState, 0x48) = ((intptr_t)top) + 0x10;    // hksState->top = top + 1;
 };
 
+
+
+//EMEVD
+bool (*emevdSystemCondition)(void* unk1, void* unk2, CSEmkEventIns* event);
+
+bool (*emevdSystemControlFlow)(void* unk1, void* unk2, CSEmkEventIns* event);
+
+bool (*emevdSystemFunction)(void* unk1, void* unk2, CSEmkEventIns* event);
+
+
+//ESD
+
+//GAME DEBUG
+
+//Creates a new chr using the debug methods. This chr will have to be manually deleted for memory management.
+void createChrDebug(ChrSpawnDbgProperties& properties) 
+{
+    intptr_t dbgChrCreator = *PointerChain::make<intptr_t, true>(WorldChrMan, 0x1e640);
+    if (dbgChrCreator == NULL) return;
+
+    *(wchar_t*)(dbgChrCreator + 0x100) = properties.model[0];
+    *(wchar_t*)(dbgChrCreator + 0x102) = properties.model[1];
+    *(wchar_t*)(dbgChrCreator + 0x104) = properties.model[2];
+    *(wchar_t*)(dbgChrCreator + 0x106) = properties.model[3];
+    *(wchar_t*)(dbgChrCreator + 0x108) = properties.model[4];
+    *(wchar_t*)(dbgChrCreator + 0x10a) = 0;
+
+    *(bool*)(dbgChrCreator + 0x178) = properties.isPlayer;
+
+    *(int*)(dbgChrCreator + 0xf0) = properties.npcParam;
+    *(int*)(dbgChrCreator + 0xf4) = properties.npcThinkParam;
+    *(int*)(dbgChrCreator + 0xf8) = properties.eventEntityId;
+    *(int*)(dbgChrCreator + 0xfc) = properties.talkId;
+
+    *(int*)(dbgChrCreator + 0x17c) = properties.charaInitParam;
+    *(int*)(dbgChrCreator + 0x180) = properties.manipulatorType;
+
+    *(float*)(dbgChrCreator + 0xb0) = properties.posX;
+    *(float*)(dbgChrCreator + 0xb4) = properties.posY;
+    *(float*)(dbgChrCreator + 0xb8) = properties.posZ;
+
+
+    *(bool*)(dbgChrCreator + 0x44) = true; //Set spawn = true
+}
+
+//Delete chr (use for manual deletion of manually created chrs)
+void (*deleteChr)(void* worldChrMan, void* chrIns);
+
+void* getLatestDebugChr() 
+{
+    return *PointerChain::make<void*, true>(WorldChrMan, 0x1e640, 0x1b0);
+}
