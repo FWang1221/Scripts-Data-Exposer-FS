@@ -1,0 +1,89 @@
+Low level functions exposed to HKS state:
+
+exposePrint -- writes to console
+getTextInput -- acquires a string from console
+minimizeConsole -- minimizes the console
+focusConsole -- brings console to the front
+setConsolePosSize -- resizes and changes console position
+
+
+getOSClockLua -- get cpu clock time, very accurate clock (not needed for ER, needed for SDT where os.clock() rounds to the nearest second for some reason)
+
+
+luaFileSize -- get file's size
+luaFilePermissions -- get file's permissions (read-only, read-write, etc...)
+luaLastFileAccess -- get the time of the file's last access time
+luaListFilesInDir -- get all files within subdirectory (not recursive), separated by "|"
+
+
+setTimeStepSize -- other hardcoded hook for setting world speed delta time value. 0.0167 (1/60) is default.
+
+
+traversePointerChain -- legacy function from script exposer which dereferences a series of pointers with offsets and returns the final value
+traversePointerChainDebug -- traversePointerChain but prints addresses (use if getting segfaults)
+writePointerChain -- legacy function from script exposer which dereferences a series of pointers with offsets and writes to the memory value
+writePointerChainDebug -- writePointerChain but prints addresses (use if getting segfaults)
+
+
+-- Note that due to Lua's number being floats, they lose precision above around 2 billion. For memory addresses, which are very large numbers, it is best to store them as hexadecimal strings (basic hexadecimal API provided). For example: 0x12938175201 is better stored as "0x12938175201" for better 
+
+getScannedAddress -- get address in hexadecimal string from AoB scan
+getScannedAddressStatic -- get static address in hexadecimal string from AoB scan (recommended function to use)
+getProcessBase -- get address of process' (exe) base
+
+
+readPointerFunc -- reads pointer address (8 bytes) from address (must be put in as hexadecimal string), returns said pointer (x64), returns as hexadecimal string
+readIntegerFunc -- reads integer (int) (4 bytes) from address (must be put in as hexadecimal string), returns as number type
+readUnsignedIntegerFunc -- reads unsigned integer (uint) (4 bytes) from address (must be put in as hexadecimal string), returns as number type
+readSmallIntegerFunc -- reads small integer (short) (2 bytes) from address (must be put in as hexadecimal string), returns as number type
+readUnsignedSmallIntegerFunc -- reads unsigned small integer (ushort) (2 bytes) from address (must be put in as hexadecimal string), returns as number type
+readFloatFunc -- reads float (float) (4 bytes) from address (must be put in as hexadecimal string), returns as number type
+readByteFunc -- reads byte (byte, can be char too) (1 byte) from address (must be put in as hexadecimal string), returns as number type
+readUnsignedByteFunc -- reads unsigned byte (ubyte, can be uchar too) (1 byte) from address (must be put in as hexadecimal string), returns as number type
+
+
+writeSmallIntegerFunc -- writes short to address (hexadecimal string)
+writeUnsignedSmallIntegerFunc -- writes ushort to address
+writeIntegerFunc -- writes int to address
+writeUnsignedIntegerFunc -- writes uint to address
+writeFloatFunc -- writes float to address
+writeByteFunc -- writes byte to address
+writeUnsignedByteFunc -- writes ubyte to address
+
+
+secondEnvRunFile -- functions like pcall(loadfile()) but runs the code in a secondary non-HKS Lua environment. the file path is relative to the exe
+secondEnvRunCode -- functions like load() or loadstring() but runs the code in a secondary non-HKS Lua environment.
+secondEnvGetGlobalJSON -- pushes a global variable in the second env to the hks in the form of a JSON string. call json.decode() on the string to turn the JSON to the object it represents. requires json.lua in the game directory.
+
+
+makeHttpGetRequest -- makes http GET request with url and body, returns status and response
+makeHttpPostRequest -- make http POST request with url and body, returns status and response
+
+
+luaRegistryRead -- reads registry path's key name
+luaRegistryWrite -- writes registry path's key value, but with forced prefix of "Software/HKS_ScriptExposer"
+
+
+High level functions used in HKS state, usage of these is preferable:
+
+
+paramUtils.initRowDetect -- creates param lua files for all params, but segfaults
+paramUtils.initRowDetectQuick -- creates param lua files for select params, mostly the good ones. automatically called at the beginning of the first time the game is loaded.
+
+
+paramUtils.getParamRows -- takes in a param name (capitalization matters) and returns a table of row objects, each object has an id and an address. the table is sorted by the string of the id. very slow, use with caution.
+paramUtils.getParamRowAddress -- takes in a param name and a row ID and returns the address as a hex string. requires the param to be mapped with initRowDetect or initRowDetectQuick. not really needed mostly.
+paramUtils.getAttributeOffset -- takes in a param name, and an attribute name (like iconId) and returns the byte offset as a hex string. not really needed mostly.
+
+
+-- dynamic param shit
+paramUtils.getParamRowAttribute -- takes a param name, a row id, and an attribute name, and returns the value of the param row's attribute as a number
+paramUtils.setParamRowAttribute -- takes a param name, a row id, and an attribute name, and a value, and sets the value of the param row's attribute to the value
+paramUtils.setParamRowAttributeWithBackup -- does the same thing as the normal one but backs the value up first in the second lua environment. doesn't currently work.
+
+-- cheat table-esque shit
+setWorldSpeed -- takes in a number. 1 is default world speed, 1.5 is 50% faster, 0.5 is 50% slower. the math is a bit wonky sometimes so manual adjustment might be made as I feel that 1 is actually like 90% world speed or something.
+
+playerData.<xyz> -- check the playerData table in core.lua, it's pretty self explanatory. getPtr doesn't seem to work sometimes like with getting the player x, y, z coords but setting is fine for some reason
+
+gameData.<xyz> -- check the gameData table in core.lua.

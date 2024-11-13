@@ -10,6 +10,12 @@
 #include <sstream>
 #include <iomanip>
 #include <stdexcept>
+#include "../include/httplib.h"
+#include <filesystem> // C++17
+#include <fstream>
+#include <windows.h>
+
+namespace fs = std::filesystem;
 extern "C" {
 #include "../include/lua.h"
 #include "../include/lualib.h"
@@ -1356,48 +1362,307 @@ static int lua_get_json_encoded_global(HksState* hksState) {
 
   return 1; // Return the encoded JSON string
 }
+// local status, response = makeHttpGetRequest(url, body)
+static int makeHttpGetRequest(HksState* hksState) {
+  // Get the URL and body parameters
+  std::string url = hksParamToString(hksState, 1);  // First argument: URL
+  std::string body = hksParamToString(hksState, 2); // Second argument: Body (optional, not typically used for GET)
+
+  // Split URL into host and path using httplib
+  httplib::Client cli(url.c_str());
+
+  // Make the GET request
+  auto res = cli.Get("/"); // Assuming you want to request the root path
+
+  if (res) {
+    hks_lua_pushnumber(hksState, res->status);
+    hksPushString(hksState, res->body);
+    return 2;
+  }
+  else {
+    Logger::debug("Request failed.");
+    return 0;
+  }
+
+  return 0;
+}
+
+// local status, response = makeHttpPostRequest(url, body)
+static int makeHttpPostRequest(HksState* hksState) {
+  // Get the URL and body parameters
+  std::string url = hksParamToString(hksState, 1);  // First argument: URL
+  std::string body = hksParamToString(hksState, 2); // Second argument: Body
+
+  // Create the client using the URL
+  httplib::Client cli(url.c_str());
+
+  // Send the POST request to the root path ("/"), including the body
+  auto res = cli.Post("/", body, "application/x-www-form-urlencoded"); // You can change the content type if needed
+
+  if (res) {
+    // Push the response status code and body to Lua
+    hks_lua_pushnumber(hksState, res->status);
+    hksPushString(hksState, res->body);
+    return 2; // Returning 2 values (status and body)
+  }
+  else {
+    Logger::debug("Request failed.");
+    return 0; // No return in case of failure
+  }
+
+  return 0;
+}
 
 
-static void newPushEnvActGlobalsFunc(HksState* hksState)
+// File size
+static int luaFileSize(HksState* hksState) {
+  std::string filepath = hksParamToString(hksState, 1); // Get filepath from Lua
+  try {
+    auto size = fs::file_size(filepath);
+    hks_lua_pushnumber(hksState, size);  // Push file size as number
+  }
+  catch (fs::filesystem_error& e) {
+    Logger::debug("Error: %s", e.what());
+    return 0; // Return no value in case of error
+  }
+  return 1; // Return one value (file size)
+}
+
+// File permissions
+static int luaFilePermissions(HksState* hksState) {
+  std::string filepath = hksParamToString(hksState, 1); // Get filepath from Lua
+  try {
+    auto perms = fs::status(filepath).permissions();
+    hks_lua_pushnumber(hksState, static_cast<int>(perms));  // Push permissions as number
+  }
+  catch (fs::filesystem_error& e) {
+    Logger::debug("Error: %s", e.what());
+    return 0; // Return no value in case of error
+  }
+  return 1; // Return one value (permissions)
+}
+
+// Last file access time
+static int luaLastFileAccess(HksState* hksState) {
+  std::string filepath = hksParamToString(hksState, 1); // Get filepath from Lua
+  try {
+    auto ftime = fs::last_write_time(filepath);
+    auto seconds = std::chrono::duration_cast<std::chrono::seconds>(ftime.time_since_epoch()).count();
+    hks_lua_pushnumber(hksState, seconds);  // Push last access time as a timestamp
+  }
+  catch (fs::filesystem_error& e) {
+    Logger::debug("Error: %s", e.what());
+    return 0; // Return no value in case of error
+  }
+  return 1; // Return one value (timestamp)
+}
+
+// List all files/folders within a directory (separated by "|")
+static int luaListFilesInDir(HksState* hksState) {
+  std::string dirpath = hksParamToString(hksState, 1); // Get directory path from Lua
+  std::string result;
+
+  try {
+    for (const auto& entry : fs::directory_iterator(dirpath)) {
+      result += entry.path().string() + "|"; // Use "|" as separator
+    }
+    if (!result.empty()) {
+      result.pop_back(); // Remove the last "|"
+    }
+    hksPushString(hksState, result);  // Push the list of files/folders as a single string
+  }
+  catch (fs::filesystem_error& e) {
+    Logger::debug("Error: %s", e.what());
+    return 0; // Return no value in case of error
+  }
+  return 1; // Return one value (the file list)
+}
+
+
+#define HKS_SUBDIR L"Software\\HKS_ScriptExposer"
+
+std::wstring stringToWString(const std::string& str) {
+  // Find the size needed for the wide string
+  int size_needed = MultiByteToWideChar(CP_UTF8, 0, str.c_str(), (int)str.size(), NULL, 0);
+
+  // Create a wstring with the needed size
+  std::wstring wstr(size_needed, 0);
+
+  // Convert string to wide string
+  MultiByteToWideChar(CP_UTF8, 0, str.c_str(), (int)str.size(), &wstr[0], size_needed);
+
+  return wstr;
+}
+
+std::string wstringToString(const std::wstring& wstr) {
+  // Determine the size needed for the resulting string
+  int size_needed = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), (int)wstr.size(), NULL, 0, NULL, NULL);
+
+  // Create a string with the needed size
+  std::string str(size_needed, 0);
+
+  // Convert the wstring to string
+  WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), (int)wstr.size(), &str[0], size_needed, NULL, NULL);
+
+  return str;
+}
+
+
+// Registry read function
+static int luaRegistryRead(HksState* hksState) {
+  std::wstring key = stringToWString(hksParamToString(hksState, 1)); // Full registry key path
+  std::wstring valueName = stringToWString(hksParamToString(hksState, 2)); // Value name
+
+  HKEY hKey;
+  DWORD bufferSize = 1024;
+  wchar_t buffer[1024] = { 0 };
+  DWORD dwType = REG_SZ; // Assuming we deal with string values
+
+  if (RegOpenKeyExW(HKEY_CURRENT_USER, key.c_str(), 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+    if (RegQueryValueExW(hKey, valueName.c_str(), NULL, &dwType, (LPBYTE)buffer, &bufferSize) == ERROR_SUCCESS) {
+      std::wstring result(buffer);
+      RegCloseKey(hKey);
+      hksPushString(hksState, std::string(result.begin(), result.end())); // Convert to std::string
+      return 1; // Return one value (string)
+    }
+    RegCloseKey(hKey);
+  }
+
+  Logger::debug("Registry read failed for key: %s", wstringToString(key));
+  return 0; // Return no value in case of failure
+}
+
+// Helper function to verify that key is within HKS_ScriptExposer
+bool isKeyInHKSSubdir(const std::wstring& key) {
+  std::wstring allowedPrefix = L"Software\\HKS_ScriptExposer";
+  return key.find(allowedPrefix) == 0;
+}
+
+// Registry write function (restricted to HKS_ScriptExposer)
+static int luaRegistryWrite(HksState* hksState) {
+  std::wstring key = stringToWString(hksParamToString(hksState, 1)); // Full registry key path
+  std::wstring valueName = stringToWString(hksParamToString(hksState, 2)); // Value name
+  std::wstring value = stringToWString(hksParamToString(hksState, 3)); // Value data
+
+  // Ensure key is inside the allowed subdirectory
+  if (!isKeyInHKSSubdir(key)) {
+    Logger::debug("Registry read failed for key: %s", wstringToString(key));
+    return 0;
+  }
+
+  HKEY hKey;
+  DWORD disposition;
+
+  // Open or create the key in HKS_ScriptExposer subdirectory
+  if (RegCreateKeyExW(HKEY_CURRENT_USER, key.c_str(), 0, NULL, 0, KEY_WRITE, NULL, &hKey, &disposition) == ERROR_SUCCESS) {
+    if (RegSetValueExW(hKey, valueName.c_str(), 0, REG_SZ, (const BYTE*)value.c_str(), (value.size() + 1) * sizeof(wchar_t)) == ERROR_SUCCESS) {
+      RegCloseKey(hKey);
+      hks_lua_pushnumber(hksState, 1); // Return true for success
+      return 1;
+    }
+    RegCloseKey(hKey);
+  }
+
+  Logger::debug("Registry read failed for key: %s", wstringToString(key));
+  return 0;
+}
+
+static void pushConsoleFuncs(HksState* hksState) // windows console shit
 {
-    //hks_addnamedcclosure(hksState, "env", LuaHks_env);
-    //hks_addnamedcclosure(hksState, "act", LuaHks_act);
-    hks_addnamedcclosure(hksState, "exposePrint", exposePrint);
-    hks_addnamedcclosure(hksState, "getTextInput", getTextInput);
-    hks_addnamedcclosure(hksState, "minimizeConsole", minimizeConsole);
-    hks_addnamedcclosure(hksState, "focusConsole", focusConsole);
-    hks_addnamedcclosure(hksState, "setConsolePosSize", setConsolePosSize);
-    hks_addnamedcclosure(hksState, "setTimeStepSize", setTimeStepSize);
-    hks_addnamedcclosure(hksState, "getOSClockLua", getOSClockLua);
-    hks_addnamedcclosure(hksState, "traversePointerChain", traversePointerChain);
-    hks_addnamedcclosure(hksState, "writePointerChain", writePointerChain);
-    hks_addnamedcclosure(hksState, "traversePointerChainDebug", traversePointerChainDebug);
-    hks_addnamedcclosure(hksState, "writePointerChainDebug", writePointerChainDebug);
-    hks_addnamedcclosure(hksState, "getScannedAddress", getScannedAddress);
-    hks_addnamedcclosure(hksState, "getScannedAddressStatic", getScannedAddressStatic);
-    hks_addnamedcclosure(hksState, "readPointerFunc", readPointer);
-    hks_addnamedcclosure(hksState, "readIntegerFunc", readInteger);
-    hks_addnamedcclosure(hksState, "readSmallIntegerFunc", readSmallInteger);
-    hks_addnamedcclosure(hksState, "readUnsignedSmallIntegerFunc", readUnsignedSmallInteger);
-    hks_addnamedcclosure(hksState, "readUnsignedIntegerFunc", readUnsignedInteger);
-    hks_addnamedcclosure(hksState, "readFloatFunc", readFloat);
-    hks_addnamedcclosure(hksState, "readByteFunc", readByte);
-    hks_addnamedcclosure(hksState, "readUnsignedByteFunc", readUnsignedByte);
-    hks_addnamedcclosure(hksState, "writeSmallIntegerFunc", writeSmallInteger);
-    hks_addnamedcclosure(hksState, "writeUnsignedSmallIntegerFunc", writeUnsignedSmallInteger);
-    hks_addnamedcclosure(hksState, "writeIntegerFunc", writeInteger);
-    hks_addnamedcclosure(hksState, "writeUnsignedIntegerFunc", writeUnsignedInteger);
-    hks_addnamedcclosure(hksState, "writeFloatFunc", writeFloat);
-    hks_addnamedcclosure(hksState, "writeByteFunc", writeByte);
-    hks_addnamedcclosure(hksState, "writeUnsignedByteFunc", writeUnsignedByte);
-    hks_addnamedcclosure(hksState, "getProcessBase", getProcessBaseHexLua);
+  hks_addnamedcclosure(hksState, "exposePrint", exposePrint);
+  hks_addnamedcclosure(hksState, "getTextInput", getTextInput);
+  hks_addnamedcclosure(hksState, "minimizeConsole", minimizeConsole);
+  hks_addnamedcclosure(hksState, "focusConsole", focusConsole);
+  hks_addnamedcclosure(hksState, "setConsolePosSize", setConsolePosSize);
+
+}
+static void pushExtendedFuncs(HksState* hksState) //clock and file io
+{
+  hks_addnamedcclosure(hksState, "getOSClockLua", getOSClockLua);
+  //implement c file io shit
+  hks_addnamedcclosure(hksState, "luaFileSize", luaFileSize);
+  hks_addnamedcclosure(hksState, "luaFilePermissions", luaFilePermissions);
+  hks_addnamedcclosure(hksState, "luaLastFileAccess", luaLastFileAccess);
+  hks_addnamedcclosure(hksState, "luaListFilesInDir", luaListFilesInDir);
+  // external funcs and hooks
+  hks_addnamedcclosure(hksState, "setTimeStepSize", setTimeStepSize);
+
+}
+static void pushLegacyScriptExposerFuncs(HksState* hksState) //old shit that i mangled
+{
+  //hks_addnamedcclosure(hksState, "env", LuaHks_env);
+  //hks_addnamedcclosure(hksState, "act", LuaHks_act);
+  hks_addnamedcclosure(hksState, "traversePointerChain", traversePointerChain);
+  hks_addnamedcclosure(hksState, "writePointerChain", writePointerChain);
+  hks_addnamedcclosure(hksState, "traversePointerChainDebug", traversePointerChainDebug);
+  hks_addnamedcclosure(hksState, "writePointerChainDebug", writePointerChainDebug);
+
+}
+static void pushMemoryFuncs(HksState* hksState) //unsafe memory weird bullshit, basic stuff
+{
+  hks_addnamedcclosure(hksState, "getScannedAddress", getScannedAddress);
+  hks_addnamedcclosure(hksState, "getScannedAddressStatic", getScannedAddressStatic);
+  hks_addnamedcclosure(hksState, "readPointerFunc", readPointer);
+  hks_addnamedcclosure(hksState, "readIntegerFunc", readInteger);
+  hks_addnamedcclosure(hksState, "readSmallIntegerFunc", readSmallInteger);
+  hks_addnamedcclosure(hksState, "readUnsignedSmallIntegerFunc", readUnsignedSmallInteger);
+  hks_addnamedcclosure(hksState, "readUnsignedIntegerFunc", readUnsignedInteger);
+  hks_addnamedcclosure(hksState, "readFloatFunc", readFloat);
+  hks_addnamedcclosure(hksState, "readByteFunc", readByte);
+  hks_addnamedcclosure(hksState, "readUnsignedByteFunc", readUnsignedByte);
+  hks_addnamedcclosure(hksState, "writeSmallIntegerFunc", writeSmallInteger);
+  hks_addnamedcclosure(hksState, "writeUnsignedSmallIntegerFunc", writeUnsignedSmallInteger);
+  hks_addnamedcclosure(hksState, "writeIntegerFunc", writeInteger);
+  hks_addnamedcclosure(hksState, "writeUnsignedIntegerFunc", writeUnsignedInteger);
+  hks_addnamedcclosure(hksState, "writeFloatFunc", writeFloat);
+  hks_addnamedcclosure(hksState, "writeByteFunc", writeByte);
+  hks_addnamedcclosure(hksState, "writeUnsignedByteFunc", writeUnsignedByte);
+  hks_addnamedcclosure(hksState, "getProcessBase", getProcessBaseHexLua);
+  //todo: implement memcpy and dumping memory and returning bytes
+}
+static void pushSecondLuaEnvFuncs(HksState* hksState)
+{
     hks_addnamedcclosure(hksState, "secondEnvRunFile", lua_run_lua_file);
     hks_addnamedcclosure(hksState, "secondEnvRunCode", lua_run_lua_code);
     hks_addnamedcclosure(hksState, "secondEnvGetGlobalJSON", lua_get_json_encoded_global);
+}
+static void pushWebFuncs(HksState* hksState)
+{
+  //todo: implement GET/POST, as well as server which pushes things to the second lua environment
+  //todo: also implement a websocket client/server coz why the fuck not
+
+  hks_addnamedcclosure(hksState, "makeHttpGetRequest", makeHttpGetRequest);
+  hks_addnamedcclosure(hksState, "makeHttpPostRequest", makeHttpPostRequest);
+
+}
+static void pushRegistryFuncs(HksState* hksState)
+{
+  //todo: implement get/set registry values
+
+  hks_addnamedcclosure(hksState, "luaRegistryRead", luaRegistryRead);
+  hks_addnamedcclosure(hksState, "luaRegistryWrite", luaRegistryWrite);
+
+}
+static void pushDirectXDrawFuncs(HksState* hksState)
+{
+  //todo: store directx drawing objs and hook it and do stuff or something
+}
+static void pushCallAssemblyFuncs(HksState* hksState)
+{
+  //todo: allow lua to call funcs similar to cheat engine + also malloc  and mov and other assembly shit
 }
 
 static void hksSetCGlobalsHookFunc(HksState* hksState)
 {
     hksSetCGlobals(hksState);
-    newPushEnvActGlobalsFunc(hksState);
+    pushConsoleFuncs(hksState);
+    pushExtendedFuncs(hksState); // unfinished
+    pushLegacyScriptExposerFuncs(hksState);
+    pushMemoryFuncs(hksState); // unfinished
+    pushSecondLuaEnvFuncs(hksState);
+    pushWebFuncs(hksState);
+    pushRegistryFuncs(hksState);
+    pushDirectXDrawFuncs(hksState); // unfinished
+    pushCallAssemblyFuncs(hksState); // unfinished
+
 }

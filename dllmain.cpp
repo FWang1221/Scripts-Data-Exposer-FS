@@ -117,6 +117,12 @@ void onDetach()
     cleanup_lua_state();
 }
 
+void delayedOnAttach() {
+  // Delay by 10 seconds (10,000 milliseconds)
+  std::this_thread::sleep_for(std::chrono::seconds(10));
+  onAttach();
+}
+
 BOOL APIENTRY DllMain( HMODULE hModule,
                        DWORD  ul_reason_for_call,
                        LPVOID lpReserved
@@ -125,8 +131,7 @@ BOOL APIENTRY DllMain( HMODULE hModule,
     switch (ul_reason_for_call)
     {
     case DLL_PROCESS_ATTACH:
-        std::this_thread::sleep_for(std::chrono::seconds(10));
-        onAttach();
+        std::thread(delayedOnAttach).detach();
         break;
     case DLL_THREAD_ATTACH:
         break;

@@ -146,6 +146,9 @@
     <ClInclude Include="include\lualib.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="include\httplib.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="include\mem\cpp.hint" />

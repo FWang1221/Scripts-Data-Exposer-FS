@@ -9,6 +9,12 @@
 #include "ProcessData.h"
 #include "AOBScan.h"
 #include <atomic>
+#include <d3d11.h>
+#include <dxgi.h>
+#include <tchar.h>
+#include <thread>
+
+static void otherHooks();
 
 static uintptr_t addressToSet = 0x143D7A359;
 typedef __int64(__fastcall* __timeStepSetter)(__int64 trash, __int64 FD4Time);
@@ -29,7 +35,12 @@ __int64 setTimeStep(__int64 trash, __int64 FD4Time) {
   return timeStepSetterOriginal(trash, FD4Time);
 }
 
+
+
 static void otherHooks() {
 
-	MH_CreateHook((LPVOID)timeStepSetter, (LPVOID)&setTimeStep, reinterpret_cast<LPVOID*>(&timeStepSetterOriginal));
+  Logger::log("World speed hook starting...");
+
+  MH_CreateHook((LPVOID)timeStepSetter, (LPVOID)&setTimeStep, reinterpret_cast<LPVOID*>(&timeStepSetterOriginal));
+
 }
