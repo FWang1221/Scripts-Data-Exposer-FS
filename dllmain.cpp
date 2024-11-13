@@ -4,13 +4,15 @@
 #include <iostream>
 #include <vector>
 #include <Psapi.h>
+#include <thread>
+#include <chrono>
 #include "game/HksState.h"
 #include "include/MinHook.h"
 #include "include/Logger.h"
 #include "game/ProcessData.h"
 #include "game/AOBScan.h"
 
-
+static void otherHooks();
 #if _WIN64
 #pragma comment(lib, "libMinHook-x64-v141-md.lib")
 #else
@@ -61,17 +63,21 @@ bool createHook(const char* name, LPVOID pTarget, LPVOID pDetour, LPVOID* ppOrig
     }
     return true;
 }
-
+// also check for updates automatically with http coz i'm a creep, i'm a weirdo
 void initHooks() 
 {
     createHook("hksSetCGlobals", replacedHksSetCGlobals, &hksSetCGlobalsHookFunc, (void**)&hksSetCGlobals);
+
+    Logger::log("Other hooks starting...");
+
+    otherHooks();
 
     MH_EnableHook(MH_ALL_HOOKS);
 }
 
 void onAttach()
 {
-    if (DEBUG && GetConsoleWindow() == NULL) 
+    if (GetConsoleWindow() == NULL) 
     {
         AllocConsole();
         freopen_s((FILE**)stdout, "CONOUT$", "w", stdout);
@@ -87,7 +93,7 @@ void onAttach()
     int mhStatus = MH_Initialize();
     if (mhStatus != MH_OK) 
     {
-        Logger::log("MinHok Initialize error " + mhStatus);
+        Logger::log("MinHook Initialize error " + mhStatus);
         return;
     }
 
@@ -96,7 +102,7 @@ void onAttach()
     initHooks();
 
     initialize_lua_state();
-
+    //todo: remove hardcoded path and put in the ini file
     std::string path = "scriptExposerAssets/Start.lua";
 
     run_lua_file(path.c_str());
@@ -119,6 +125,7 @@ BOOL APIENTRY DllMain( HMODULE hModule,
     switch (ul_reason_for_call)
     {
     case DLL_PROCESS_ATTACH:
+        std::this_thread::sleep_for(std::chrono::seconds(10));
         onAttach();
         break;
     case DLL_THREAD_ATTACH:
